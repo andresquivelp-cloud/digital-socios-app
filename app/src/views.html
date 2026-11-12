@@ -1,0 +1,289 @@
+
+  <!-- ================= BUDGET (same pattern as Banca's Budget screen: planned vs paid for the month) ================= -->
+  <main class="screen" id="s-budget" aria-label="Budget">
+    <div class="ph">
+      <div><h1 id="bg-month"></h1></div>
+      <div class="mnav" role="group" aria-label="Month">
+        <button type="button" class="mn-ar" data-bm="-1" aria-label="Previous month"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+        <button type="button" class="mn-ar" data-bm="1" aria-label="Next month"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <button type="button" class="mn-today" data-btoday>Today</button>
+      </div>
+    </div>
+    <div class="bg-grid">
+      <div id="bg-table"></div>
+      <aside class="bg-side" id="bg-side" aria-label="Month summary"></aside>
+    </div>
+    <div style="height:64px"></div>
+  </main>
+
+  <!-- ================= ACCOUNTS (Banca app layout: net worth chart, account groups, account detail) ================= -->
+  <main class="screen" id="s-accounts" aria-label="Accounts">
+    <div id="ac-main">
+      <div class="ph"><div><h1>Accounts</h1><span class="sub" id="ac-sub"></span></div><div class="tools">
+        <button type="button" class="tb" id="ac-sort">Sort: Balance <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div></div>
+      <section class="rh" aria-label="Net worth">
+        <div class="rh-k" id="a-title">Net worth</div>
+        <div class="rh-big" id="a-big"></div>
+        <div class="rh-ch" id="a-sub"></div>
+        <div id="a-back"></div>
+        <div id="a-chart" class="rh-chart"></div>
+        <div class="rh-range" id="a-range" role="tablist" aria-label="Range"></div>
+      </section>
+      <div class="acards" id="a-list"></div>
+    </div>
+    <div id="ac-detail" hidden></div>
+    <div style="height:64px"></div>
+  </main>
+
+<script>
+(function () {
+  var D = window.BD, M = D.months, FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  var money = function (n, c) { return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: c ? 2 : 0, maximumFractionDigits: c ? 2 : 0 }); };
+  var num = function (n) { return Math.round(Math.abs(n)).toLocaleString('en-US'); };
+  var cat = function (id) { return D.cats[id] || ['Uncategorized', 'Other']; };
+  var TODAY = new Date(D.today + 'T12:00:00');
+  var CHEV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  var ICON = {
+    all: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>',
+    bank: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5L12 4l9 5.5"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20.5h18"/></svg>',
+    card: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3"/></svg>'
+  };
+
+  /* ================= budget ================= */
+  var bm = TODAY.getMonth(), closed = {};
+  function key(m) { return D.year + '-' + String(m + 1).padStart(2, '0'); }
+  function budget() {
+    var k = key(bm), B = D.budget[k] || {}, paid = {};
+    D.atx.forEach(function (t) { if (t[0].slice(0, 7) !== k) return; var c = cat(t[2]); if (c[1] === 'Transfers') return; paid[t[2]] = (paid[t[2]] || 0) + (c[1] === 'Income' ? t[3] : -t[3]); });
+    var ids = {}; Object.keys(B).forEach(function (i) { ids[i] = 1; }); Object.keys(paid).forEach(function (i) { ids[i] = 1; });
+    var groups = {}; Object.keys(ids).forEach(function (i) { var g = cat(i)[1]; (groups[g] = groups[g] || []).push(i); });
+    var current = bm === TODAY.getMonth(), future = bm > TODAY.getMonth();
+    var dim = new Date(D.year, bm + 1, 0).getDate(), mark = current ? TODAY.getDate() / dim : future ? 0 : 1;
+    $('#bg-month').textContent = FULL[bm] + ' ' + D.year;
+    $('[data-btoday]').disabled = current;
+    var prog = function (a, b, inc) { var p = b ? Math.max(0, a / b) : (a ? 1 : 0), over = !inc && a - b >= .5; return '<div class="mp"><i class="' + (over ? 'over' : '') + '" style="width:' + (Math.min(1, p) * 100).toFixed(1) + '%"></i><b style="left:' + (mark * 100).toFixed(1) + '%"></b></div>'; };
+    var rem = function (r, inc) { r = Math.round(r); var c = Math.abs(r) < .5 ? 'zero' : r < 0 ? (inc ? 'pos' : 'neg') : 'pos'; return '<span class="rm"><em class="' + c + '">' + (r < -.005 ? '-' : '') + money(Math.abs(r)) + '</em></span>'; };
+    var row = function (cls, name, b, a, inc, box, chevron) {
+      return '<div class="mb-row ' + cls + '"><span class="nm">' + (chevron || '') + '<span>' + name + '</span></span>' + (cls === 'grp' ? '<span></span>' : prog(a, b, inc)) +
+        '<span class="pl">' + (box ? '<i class="box">' + money(b) + '</i>' : money(b)) + '</span><span class="ac">' + money(a) + '</span>' + rem(b - a, inc) + '</div>';
+    };
+    var band = function (label, open) { return '<div class="mb-band"><span class="nm"><i class="ch">' + CHEV + '</i>' + label + '</span><span>Progress</span><span class="pl">Planned</span><span class="ac">Actual</span><span class="rm">Remaining</span></div>'; };
+    var T = { bi: 0, ai: 0, be: 0, ae: 0 }, h = '', expStarted = false;
+    D.groups.forEach(function (g) {
+      var list = groups[g]; if (!list) return;
+      var inc = g === 'Income', gb = 0, ga = 0, shut = !!closed[g];
+      list.sort(function (a, b) { return (B[b] || 0) - (B[a] || 0) || (paid[b] || 0) - (paid[a] || 0); });
+      list.forEach(function (i) { gb += B[i] || 0; ga += paid[i] || 0; });
+      if (inc) h += band('Income'); else if (!expStarted) { h += band('Expenses'); expStarted = true; }
+      h += '<section class="mb-card' + (shut ? ' closed' : '') + '">' + row('grp', esc(g), gb, ga, inc, false, '<button type="button" class="ch" data-bgg="' + esc(g) + '" aria-expanded="' + !shut + '" aria-label="Toggle ' + esc(g) + '">' + CHEV + '</button>') +
+        '<div class="rows">' + list.map(function (i) { return row('cat', esc(cat(i)[0]), B[i] || 0, paid[i] || 0, inc, true); }).join('') + '</div></section>';
+      if (inc) { T.bi += gb; T.ai += ga; h += '<section class="mb-card mb-tot">' + row('tot', 'Total Income', gb, ga, true, false) + '</section>'; } else { T.be += gb; T.ae += ga; }
+    });
+    if (expStarted) h += '<section class="mb-card mb-tot">' + row('tot', 'Total Expenses', T.be, T.ae, false, false) + '</section>';
+    if (!Object.keys(ids).length) h += '<p class="bg-empty">No budget or activity in Monarch for ' + FULL[bm] + '.</p>';
+    $('#bg-table').innerHTML = h;
+    var left = T.bi - T.be;
+    var sbar = function (a, b) { var p = b ? Math.min(1, a / b) : 0; return '<div class="mp lg"><i class="' + (a - b >= .5 ? 'over' : '') + '" style="width:' + (p * 100).toFixed(1) + '%"></i><b style="left:' + (mark * 100).toFixed(1) + '%"></b></div>'; };
+    $('#bg-side').innerHTML =
+      '<section class="mb-side"><div class="ltb' + (Math.abs(left) < .5 ? ' zero' : left < 0 ? ' neg' : '') + '"><b>' + (left <= -.5 ? '-' : '') + money(Math.abs(left)) + '</b><span>Left to budget</span></div>' +
+      '<div class="sm"><div class="hd"><span>Income</span><small>' + money(T.bi) + ' planned</small></div>' + sbar(T.ai, T.bi) + '<div class="ft"><b>' + money(T.ai) + ' earned</b><span><em>' + money(Math.max(0, T.bi - T.ai)) + '</em> remaining</span></div></div>' +
+      '<div class="sm"><div class="hd"><span>Expenses</span><small>' + money(T.be) + ' planned</small></div>' + sbar(T.ae, T.be) + '<div class="ft"><b>' + money(T.ae) + ' spent</b><span><em class="' + (T.ae - T.be >= .5 ? 'neg' : '') + '">' + money(Math.abs(T.be - T.ae)) + '</em> ' + (T.ae - T.be >= .5 ? 'over' : 'remaining') + '</span></div></div>' +
+      (current ? '<p class="bg-note">' + (dim - TODAY.getDate()) + ' days left in ' + FULL[bm] + '</p>' : '') + '</section>';
+    document.querySelectorAll('[data-bm]').forEach(function (b) { var n = bm + +b.dataset.bm; b.disabled = n < 0 || n > 11; });
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-bm]'); if (b && !b.disabled) { bm = Math.max(0, Math.min(11, bm + +b.dataset.bm)); budget(); return; }
+    if (e.target.closest('[data-btoday]')) { bm = TODAY.getMonth(); budget(); return; }
+    var g = e.target.closest('[data-bgg]'); if (g) { closed[g.dataset.bgg] = !closed[g.dataset.bgg]; budget(); }
+  });
+
+  /* ================= accounts (Banca layout) ================= */
+  var aRange = 'all', aSel = 'nw', aSort = 'balance', closedA = {}, openAcct = null, adChip = 'All', adN = 40;
+  var NOW = TODAY, ISO = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  var P = function (s) { return new Date(s + 'T12:00:00'); };
+  var LONG = function (d) { return M[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear(); };
+  var m2 = function (n) { return Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var RANGES = [['30', '1M'], ['90', '3M'], ['180', '6M'], ['ytd', 'YTD'], ['365', '1Y'], ['all', 'ALL']];
+  var RLBL = { '30': 'past month', '90': 'past 3 months', '180': 'past 6 months', 'ytd': 'this year', '365': 'past year', 'all': 'all time' };
+  var GROUPS = [{ name: 'Cash', liab: false, test: function (a) { return a.type !== 'Credit Card'; } }, { name: 'Credit Cards', liab: true, test: function (a) { return a.type === 'Credit Card'; } }];
+  function accts(g) { return D.accounts.filter(g.test); }
+  function gTotal(g) { return accts(g).reduce(function (t, a) { return t + (g.liab ? -a.balance : a.balance); }, 0); }
+  function totals() { var as = gTotal(GROUPS[0]), li = gTotal(GROUPS[1]); return { assets: as, liab: li, nw: as - li }; }
+  function accHist(a) { return (D.daily && D.daily[a.id] && D.daily[a.id].length) ? D.daily[a.id] : a.hist; }
+  function hist(key) {   /* [[date, value]] for 'nw', a group name, or an account id, one point per day with activity */
+    var g = GROUPS.filter(function (x) { return x.name === key; })[0];
+    if (key !== 'nw' && !g) { var a = D.accounts.filter(function (x) { return x.id === key; })[0]; return a ? accHist(a).slice() : []; }
+    var L = key === 'nw' ? D.accounts : accts(g), days = {};
+    L.forEach(function (a) { accHist(a).forEach(function (q) { days[q[0]] = 1; }); });
+    return Object.keys(days).sort().map(function (dd) {
+      return [dd, L.reduce(function (t, a) { var h = accHist(a), v = 0; for (var i = 0; i < h.length && h[i][0] <= dd; i++) v = h[i][1]; var liab = a.type === 'Credit Card'; return t + (key === 'nw' ? v : (liab ? -v : v)); }, 0)];
+    });
+  }
+  function windowStart() {
+    if (aRange === 'ytd') return new Date(NOW.getFullYear(), 0, 1, 12);
+    if (aRange === 'all') return new Date(2000, 0, 1);
+    return new Date(NOW.getTime() - (+aRange) * 864e5);
+  }
+  function series(key, todayVal) {
+    var t0 = windowStart(), pts = hist(key).filter(function (q) { return P(q[0]) >= t0 && q[0] < ISO(NOW); });
+    pts.push([ISO(NOW), todayVal]); return pts;
+  }
+  function smoothD(p) {
+    if (p.length < 2) return p.length ? 'M' + p[0][0] + ',' + p[0][1] : '';
+    var d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+    for (var i = 0; i < p.length - 1; i++) { var a = p[i - 1] || p[i], b = p[i], c = p[i + 1], e = p[i + 2] || c, t = .18;
+      d += ' C' + (b[0] + (c[0] - a[0]) * t).toFixed(1) + ',' + (b[1] + (c[1] - a[1]) * t).toFixed(1) + ' ' + (c[0] - (e[0] - b[0]) * t).toFixed(1) + ',' + (c[1] - (e[1] - b[1]) * t).toFixed(1) + ' ' + c[0].toFixed(1) + ',' + c[1].toFixed(1); }
+    return d;
+  }
+  var SPK = 0;
+  function stockSpark(vals, liab, w, h) {   /* ticker-style: jagged line, dotted line at the starting value, green up / orange down */
+    var n = vals.length; if (n < 2) return '';
+    var diff = vals[n - 1] - vals[0], good = liab ? diff < 0 : diff > 0;
+    var col = Math.abs(diff) < 1e-9 ? '#8E8E93' : good ? '#5AC53B' : '#FF5000';
+    var mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals), rg = (mx - mn) || 1, top = 3, bot = h - 3;
+    var y = function (v) { return mx === mn ? h / 2 : top + (1 - (v - mn) / rg) * (bot - top); };
+    var d = vals.map(function (v, i) { return (i ? 'L' : 'M') + (i / (n - 1) * (w - 2) + 1).toFixed(1) + ' ' + y(v).toFixed(1); }).join(''), yb = Math.round(y(vals[0]) * 10) / 10;
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true" style="overflow:visible">' +
+      '<line x1="1" x2="' + (w - 1) + '" y1="' + yb + '" y2="' + yb + '" stroke="rgba(255,255,255,.4)" stroke-width="1.2" stroke-dasharray="1 4" stroke-linecap="round"/>' +
+      '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="1.5" stroke-linejoin="miter" stroke-linecap="round"/></svg>';
+  }
+  function niceStep(r) { var m = Math.pow(10, Math.floor(Math.log10(r || 1))); return [1, 2, 2.5, 5, 10].map(function (x) { return x * m; }).filter(function (x) { return x >= r; })[0]; }
+  function fmtK(v) { var a = Math.abs(v), s = a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'K' : Math.round(a) + ''; return (v < 0 ? '-$' : '$') + s; }
+  var CH = { pts: [] };
+  function bigChart(points, W) {
+    var H = 280, L = 4, R = 4, T = 16, B = 16, r2 = function (n) { return Math.round(n * 10) / 10; };
+    if (points.length === 1) points = [[points[0][0], points[0][1]], points[0]];
+    var t0 = P(points[0][0]).getTime(), t1 = P(points[points.length - 1][0]).getTime();
+    var x = function (d) { return L + (d.getTime() - t0) / ((t1 - t0) || 1) * (W - L - R); };
+    var vals = points.map(function (q) { return q[1]; }), lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * .08 || 50;
+    var y = function (v) { return T + (1 - (v - (lo - pad)) / ((hi + pad) - (lo - pad))) * (H - T - B); };
+    /* straight point-to-point line, one point per day with activity */
+    var pts = points.map(function (q) { var d = P(q[0]); return { x: x(d), y: y(q[1]), d: d, v: q[1] }; });
+    CH.pts = pts;
+    var line = pts.map(function (q, k) { return (k ? 'L' : 'M') + r2(q.x) + ' ' + r2(q.y); }).join('');
+    var base = r2(y(points[0][1])), up = points[points.length - 1][1] >= points[0][1];
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" class="chart" role="img" aria-label="From $' + m2(points[0][1]) + ' to $' + m2(points[points.length - 1][1]) + '">' +
+      '<line x1="0" x2="' + W + '" y1="' + base + '" y2="' + base + '" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-dasharray="1.5 6" stroke-linecap="round"/>' +
+      '<path d="' + line + '" fill="none" stroke="#5AC53B" stroke-width="2.2" stroke-linejoin="miter" stroke-linecap="round"/>' +
+      '<line id="a-cur" x1="0" x2="0" y1="0" y2="' + H + '" stroke="rgba(255,255,255,.3)" stroke-dasharray="3 5"/><circle id="a-dot" cx="0" cy="0" r="5" fill="#5AC53B" stroke="#000" stroke-width="2"/></svg><div class="tip" id="a-tip"></div>';
+  }
+  function chartCursor(i, show) {
+    var box = CH.box, p = CH.pts[i]; if (!p || !box) return;
+    var cur = box.querySelector('#a-cur'), dot = box.querySelector('#a-dot'), tip = box.querySelector('#a-tip'); if (!cur) return;
+    cur.setAttribute('x1', p.x); cur.setAttribute('x2', p.x); cur.style.opacity = show ? 1 : 0; dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+    if (!show) { tip.classList.remove('on'); return; }
+    tip.innerHTML = '<small>' + LONG(p.d) + (ISO(p.d) === ISO(NOW) ? ' · Today' : '') + '</small><b>' + (p.v < 0 ? '-$' : '$') + m2(p.v) + '</b>';
+    var sc = box.clientWidth / (+box.querySelector('svg').getAttribute('width') || 1), left = p.x * sc + 16; if (left + tip.offsetWidth > box.clientWidth) left = p.x * sc - 16 - tip.offsetWidth;
+    tip.style.left = Math.round(left) + 'px'; tip.style.top = Math.round(Math.max(0, p.y * sc - 74)) + 'px'; tip.classList.add('on');
+  }
+  function drawChart(box, pts) { CH.box = box; box.innerHTML = bigChart(pts, box.clientWidth || 1100); chartCursor(CH.pts.length - 1, false); }
+  function deltaHtml(pts, liab) {
+    if (pts.length < 2) return '<small>No history yet · ' + RLBL[aRange] + '</small>';
+    var a = pts[0][1], b = pts[pts.length - 1][1], diff = b - a, good = liab ? diff <= 0 : diff >= 0, pct = a ? Math.abs(diff / a * 100).toFixed(1) : '0.0';
+    return '<small><span class="' + (good ? 'pos' : 'neg') + '">' + (diff >= 0 ? '+' : '-') + '$' + m2(diff) + ' (' + pct + '%)</span> · ' + RLBL[aRange] + '</small>';
+  }
+  var ARROW_UP = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l10 18H2z"/></svg>';
+  var ARROW_DN = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21L2 3h20z"/></svg>';
+  function changeLine(pts, liab) {
+    var a = pts.length ? pts[0][1] : 0, b = pts.length ? pts[pts.length - 1][1] : 0, diff = b - a, good = liab ? diff <= 0 : diff >= 0, pc = a ? Math.abs(diff / a * 100).toFixed(2) : '0.00';
+    return '<span class="' + (good ? 'pos' : 'neg') + '">' + (diff >= 0 ? ARROW_UP : ARROW_DN) + '$' + m2(diff) + ' (' + (diff >= 0 ? '+' : '-') + pc + '%)</span><span>' + RLBL[aRange].replace(/^./, function (c) { return c.toUpperCase(); }) + '</span>';
+  }
+  function hero(el, label, name, val, key, liab) {
+    var w = Math.floor(Math.abs(val)), c = Math.round((Math.abs(val) - w) * 100);
+    return '<section class="rh">' + '<div class="rh-k">' + label + '</div>' + (name ? '<h2 class="rh-name">' + esc(name) + '</h2>' : '') +
+      '<div class="rh-big">' + (val < 0 ? '-' : '') + '$' + w.toLocaleString('en-US') + '.' + String(c).padStart(2, '0') + '</div><div class="rh-ch">' + changeLine(series(key, val), liab) + '</div>' +
+      '<div id="a-chart" class="rh-chart"></div><div class="rh-range" role="tablist" aria-label="Range">' + RANGES.map(function (r) { return '<button type="button" role="tab" aria-selected="' + (aRange === r[0]) + '" data-arange="' + r[0] + '">' + r[1] + '</button>'; }).join('') + '</div></section>';
+  }
+  function accounts() {
+    $('#ac-main').hidden = !!openAcct; $('#ac-detail').hidden = !openAcct;
+    if (openAcct) { acctDetail(); return; }
+    var t = totals(), g = aSel === 'nw' ? null : GROUPS.filter(function (x) { return x.name === aSel; })[0];
+    var val = g ? gTotal(g) : t.nw, w = Math.floor(Math.abs(val)), c = Math.round((Math.abs(val) - w) * 100);
+    $('#ac-sub').textContent = D.accounts.length + ' accounts · synced from Monarch';
+    $('#a-title').textContent = g ? g.name : 'Net worth';
+    $('#a-back').innerHTML = g ? '<button type="button" class="pill sm" data-asel="nw"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Back to net worth</button>' : '';
+    $('#a-big').textContent = (val < 0 ? '-' : '') + '$' + w.toLocaleString('en-US') + '.' + String(c).padStart(2, '0');
+    var pts = series(g ? g.name : 'nw', val);
+    $('#a-sub').innerHTML = changeLine(pts, g && g.liab);
+    drawChart($('#ac-main #a-chart'), pts);
+    $('#a-range').innerHTML = RANGES.map(function (r) { return '<button type="button" role="tab" aria-selected="' + (aRange === r[0]) + '" data-arange="' + r[0] + '">' + r[1] + '</button>'; }).join('');
+    $('#ac-sort').firstChild.nodeValue = 'Sort: ' + (aSort === 'balance' ? 'Balance' : 'Name') + ' ';
+    $('#a-list').innerHTML = GROUPS.map(function (gr) {
+      var L = accts(gr); if (!L.length) return '';
+      L.sort(function (a, b) { return aSort === 'name' ? a.name.localeCompare(b.name) : Math.abs(b.balance) - Math.abs(a.balance); });
+      var tot = gTotal(gr), share = gr.liab ? (t.assets ? (tot / t.assets * 100).toFixed(1) + '% of assets' : '') : (t.assets ? (tot / t.assets * 100).toFixed(1) + '% of assets' : ''), shut = !!closedA[gr.name];
+      return '<section class="acard' + (shut ? ' closed' : '') + '"><div class="gh"><button type="button" class="chev" data-acg="' + gr.name + '" aria-expanded="' + !shut + '" aria-label="Toggle ' + gr.name + '">' + CHEV + '</button><button type="button" class="t" data-asel="' + gr.name + '"><h3>' + gr.name + '</h3>' + deltaHtml(series(gr.name, tot), gr.liab) + '</button><span class="r2"><span class="tot">' + (gr.liab ? '-' : '') + '$' + m2(tot) + '</span><span class="share">' + share + '</span></span></div>' +
+        '<ul>' + L.map(function (a) {
+          var sp = series(a.id, a.balance).map(function (q) { return gr.liab ? -q[1] : q[1]; }), last = a.hist.length ? a.hist[a.hist.length - 1][0] : D.today;
+          return '<li data-acct="' + a.id + '" class="has-ad" tabindex="0" role="button"><span class="av" aria-hidden="true">' + (gr.liab ? ICON.card : ICON.bank) + '</span><span class="who"><b>' + esc(a.name) + '</b><small>' + (gr.liab ? 'Credit card' : 'Checking') + '</small></span><span class="sp" aria-hidden="true">' + stockSpark(sp, gr.liab, 110, 32) + '</span><span class="rt"><b>' + (a.balance < 0 ? '-' : '') + '$' + m2(a.balance) + '</b><small>' + M[P(D.today).getMonth()] + ' ' + P(D.today).getDate() + '</small></span></li>';
+        }).join('') + '</ul></section>';
+    }).join('');
+  }
+  function acctDetail() {
+    var a = D.accounts.filter(function (x) { return x.id === openAcct; })[0]; if (!a) { openAcct = null; accounts(); return; }
+    var liab = a.type === 'Credit Card', list = D.atx.filter(function (t) { return t[4] === a.id; });
+    var lastSnap = a.hist.length > 1 ? a.hist[a.hist.length - 2] : null, since = lastSnap ? list.filter(function (t) { return t[0] >= lastSnap[0]; }).length : 0;
+    var w = Math.floor(Math.abs(a.balance)), c = Math.round((Math.abs(a.balance) - w) * 100);
+    /* category attribution: where this account's money went, by Monarch category group */
+    var by = {}; list.forEach(function (t) { var g = cat(t[2])[1]; var o = by[g] || (by[g] = { n: 0, out: 0, inn: 0 }); o.n++; if (t[3] < 0) o.out -= t[3]; else o.inn += t[3]; });
+    var top = Object.keys(by).map(function (k) { return [k, by[k]]; }).sort(function (x, y) { return (y[1].out + y[1].inn) - (x[1].out + x[1].inn); }).slice(0, 4);
+    var stats = top.length ? top.map(function (e) { var v = e[0] === 'Income' ? e[1].inn : e[1].out; return '<div class="ad-stat"><span class="k">' + esc(e[0]) + '</span><b>' + (e[0] === 'Income' ? '+' : '') + '$' + m2(v) + '</b><small>' + e[1].n + (e[1].n === 1 ? ' payment' : ' payments') + '</small></div>'; }).join('')
+      : '<div class="ad-stat" style="grid-column:1/-1"><span class="k">Category attribution</span><b>No transactions</b><small>Monarch has no transactions on this account yet</small></div>';
+    var chips = ['All'].concat(D.groups.filter(function (g) { return by[g]; }));
+    if (chips.indexOf(adChip) < 0) adChip = 'All';
+    var shown = list.filter(function (t) { return adChip === 'All' || cat(t[2])[1] === adChip; });
+    var rows = '', curM = '', tot = shown.reduce(function (s, t) { return s + t[3]; }, 0);
+    shown.slice(0, adN).forEach(function (t) {
+      var d = P(t[0]), mk = FULL[d.getMonth()] + ' ' + d.getFullYear();
+      if (mk !== curM) { curM = mk; var mt = shown.filter(function (x) { return x[0].slice(0, 7) === t[0].slice(0, 7); }).reduce(function (s, x) { return s + x[3]; }, 0); rows += '<div class="ad-mh"><span>' + mk + '</span><b>' + (mt < 0 ? '-' : '+') + '$' + m2(mt) + '</b></div>'; }
+      var c2 = cat(t[2]);
+      rows += '<div class="ad-row"><span class="ad-em" aria-hidden="true">' + esc((t[1] || '?').charAt(0).toUpperCase()) + '</span><span class="t"><b>' + esc(t[1]) + '</b><small>' + esc(c2[0]) + ' · ' + esc(c2[1]) + '</small></span><span class="r"><b class="' + (t[3] > 0 ? 'pos' : '') + '">' + (t[3] > 0 ? '+' : '-') + '$' + m2(t[3]) + '</b><small>' + M[d.getMonth()] + ' ' + d.getDate() + '</small></span></div>';
+    });
+    $('#ac-detail').innerHTML = '<div class="ad-wrap flat">' +
+      '<button type="button" class="ad-back" data-adback><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Accounts</button>' +
+      hero(null, (liab ? 'CREDIT CARD' : 'CHECKING') + ' · UPDATED ' + M[NOW.getMonth()].toUpperCase() + ' ' + NOW.getDate(), a.name, a.balance, a.id, false) +
+      '<div class="ad-chips rh-chips"><span class="ad-chip">' + list.length + ' transactions in ' + D.year + '</span>' + (lastSnap ? '<span class="ad-chip">' + since + ' since ' + M[P(lastSnap[0]).getMonth()] + ' ' + P(lastSnap[0]).getDate() + '</span>' : '') + '</div>' +
+      '<section class="ad-stats" aria-label="Category attribution">' + stats + '</section>' +
+      '<section class="ad-card ad-list" aria-label="Transactions"><div class="ad-lh"><h2>Transactions</h2><span>' + shown.length + ' · ' + (tot < 0 ? '-' : '+') + '$' + m2(tot) + '</span></div>' +
+      '<div class="ad-filt">' + chips.map(function (ch) { return '<button type="button" class="pill sm' + (ch === adChip ? ' on' : '') + '" data-adchip="' + esc(ch) + '">' + esc(ch) + '</button>'; }).join('') + '</div>' +
+      (shown.length ? rows : '<p class="bg-empty">Monarch has no transactions on this account yet. Its balance comes from the account sync.</p>') +
+      (shown.length > adN ? '<button type="button" class="ad-more" data-admore>Show ' + Math.min(50, shown.length - adN) + ' more</button>' : '') + '</section></div>';
+    $('#ac-main #a-chart').innerHTML = ''; drawChart($('#ac-detail #a-chart'), series(a.id, a.balance));
+  }
+  document.addEventListener('click', function (e) {
+    var r = e.target.closest('[data-arange]'); if (r) { aRange = r.dataset.arange; accounts(); return; }
+    var sl = e.target.closest('[data-asel]'); if (sl) { aSel = sl.dataset.asel; accounts(); return; }
+    var g = e.target.closest('[data-acg]'); if (g) { closedA[g.dataset.acg] = !closedA[g.dataset.acg]; accounts(); return; }
+    var a = e.target.closest('[data-acct]'); if (a) { openAcct = a.dataset.acct; adChip = 'All'; adN = 40; accounts(); window.scrollTo(0, 0); return; }
+    if (e.target.closest('[data-adback]')) { openAcct = null; accounts(); return; }
+    var ch = e.target.closest('[data-adchip]'); if (ch) { adChip = ch.dataset.adchip; adN = 40; acctDetail(); return; }
+    if (e.target.closest('[data-admore]')) { adN += 50; acctDetail(); return; }
+    if (e.target.closest('#ac-sort')) { aSort = aSort === 'balance' ? 'name' : 'balance'; accounts(); }
+  });
+  document.addEventListener('keydown', function (e) { var a = e.target.closest && e.target.closest('[data-acct]'); if (a && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); a.click(); } });
+  var overChart = false;
+  document.addEventListener('mousemove', function (e) {
+    var box = e.target.closest && e.target.closest('#a-chart');
+    if (!box || box !== CH.box || !CH.pts.length) { if (overChart) { overChart = false; chartCursor(CH.pts.length - 1, false); } return; }
+    overChart = true; var r = box.getBoundingClientRect(), sc = box.clientWidth / (+box.querySelector('svg').getAttribute('width') || 1), mx = (e.clientX - r.left) / sc, best = 0, bd = 1e9;
+    CH.pts.forEach(function (p, i) { var d = Math.abs(p.x - mx); if (d < bd) { bd = d; best = i; } }); chartCursor(best, true);
+  });
+  function chart() { if (!openAcct) accounts(); }
+
+  /* ================= router ================= */
+  var R = { pnl: function () { window.renderPnl(); }, budget: budget, accounts: accounts };
+  window.go = function (v) {
+    if (!R[v]) v = 'pnl';
+    document.querySelectorAll('.screen').forEach(function (s) { s.classList.toggle('on', s.id === 's-' + v); });
+    document.body.className = v;
+    try { if (location.hash.slice(1) !== v) history.replaceState(null, '', '#' + v); } catch (e) {}  /* sandboxed previews block this; the page works without it */
+    R[v](); window.scrollTo(0, 0); window.__setNav(v);
+  };
+  document.addEventListener('click', function (e) { var b = e.target.closest('.tnav button[data-view]'); if (b) window.go(b.dataset.view); });
+  window.addEventListener('hashchange', function () { var v = location.hash.slice(1); if (!document.body.classList.contains(v)) window.go(v); });
+  var rz; window.addEventListener('resize', function () { clearTimeout(rz); rz = setTimeout(function () { if (document.body.classList.contains('accounts')) chart(); }, 150); });
+})();
+</script>
